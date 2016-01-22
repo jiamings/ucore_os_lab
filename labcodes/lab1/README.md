@@ -96,11 +96,11 @@ $(UCOREIMG): $(kernel) $(bootblock)
 ```
 
 The arguments used for `dd` are as follows:
- - if = FILE (read from FILE instead of stdin)
- - of = FILE (write to FILE instaed of stdout)
- - count = N (copy only N input blocks)
- - seek = N (skip N obs(512)-sized blocks at start of output)
- - conv = CONVS (convert the file as per the comma separated symbol list)
+ - `if = FILE` (read from FILE instead of stdin)
+ - `of = FILE` (write to FILE instaed of stdout)
+ - `count = N` (copy only N input blocks)
+ - `seek = N` (skip N obs(512)-sized blocks at start of output)
+ - `conv = CONVS` (convert the file as per the comma separated symbol list)
 
 So basically these arguments does the following:
  - `dd if=/dev/zero of=bin/ucore.img count=10000` (fill 10000 blocks of 0, where each block has size 512)
@@ -110,6 +110,41 @@ So basically these arguments does the following:
 And this gives us the `ucore.img` file.
 
 ### What are the requirements for a valid sector?
-From lines 31-32 of `tools/sign.c`, we find that a sector is valid when it contains 512 bytes, and the last 2 bytes of the sector is 0x55AA.
+From lines 31-32 of `tools/sign.c`, we find that a sector is valid when it contains 512 bytes, and the last 2 bytes of the sector is `0x55AA`.
 
 ## Exercise 2
+### Use GDB to debug QEMU
+#### Tracking BIOS from the first command and setting pointer at `0x7c00`
+Using the hint, we add this target to our Makefile:
+```[bash]
+lab1-mon: $(UCOREIMG)
+	$(V)$(TERMINAL) -e "$(QEMU) -S -s -d in_asm -D $(BINDIR)/q.log -monitor stdio -hda $< -serial null"
+	$(V) sleep 2
+	$(V)$(TERMINAL) -e "gdb -q -x tools/lab1init"
+```
+
+The first command activates `$(QEMU)`, where as the third command activates gdb and uses commands in `tools/lab1init` to initialize.
+In order to break at address 0x7c00, we need to set `b *0x7c00` in the `tools/lab1init` file. Then we use 
+```
+define hook-stop
+x/i $pc
+end
+```
+to disassemble the code of PC register when we break. And then we can use `ni` or `nexti` to go to the exact next step in assembley.
+
+#### Compare the execution code with `bootasm.S`
+We use step-by-step running in gdb for the first steps and get the following:
+```
+0x00007c00 cli
+0x00007c01 cld
+0x00007c02 xor %ax, %ax
+0x00007c04 mov %ax, %ds
+0x00007c06 mov %ax, %es
+0x00007c08 mov %ax, %ss
+```
+which is exactly the same as the lines 16-23 of `bootasm.S`. Continuing we can find that the commands executed are the same as `bootasm.S` up until `call bootmain`. 
+
+#### Comparing `bin/q.log` with `bootasm.S`
+Adding `-d in_asm -D $(BINDIR)/q.log` would generate log file indicating the executed commands, `q.log` contains a lot of other commands before `0x7c00` is executed. In fact the executed commands of `bootasm.S` are at the end of the log file.
+
+There is an error with the answer: `x/10i $pc` does not put commands into bin/q.log file. The commands can be logged only when they are executed.
