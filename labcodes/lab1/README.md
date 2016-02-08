@@ -148,3 +148,101 @@ which is exactly the same as the lines 16-23 of `bootasm.S`. Continuing we can f
 Adding `-d in_asm -D $(BINDIR)/q.log` would generate log file indicating the executed commands, `q.log` contains a lot of other commands before `0x7c00` is executed. In fact the executed commands of `bootasm.S` are at the end of the log file.
 
 There is an error with the answer: `x/10i $pc` does not put commands into bin/q.log file. The commands can be logged only when they are executed.
+
+## Exercise 3
+### How bootloader enters protected mode
+#### Switching to A20
+A20 is needed for the program to switch to real mode to protected mode. In real mode, the program treats physical memory as two parts - code and data.   The operating system is no different from the user program, so if a program tries to access data in other programs or the OS, it would be a disaster. So protected mode is neeeded, and that is where A20 comes to play.
+Only in A20 mode, the 32-bit address is utilized.
+
+How to start A20? From the code and comments in `bootasm.S` we can figure out the following:
+
+ - Setup the important data segment registers (DS, ES, SS)
+ - 0xd1 -> port 0x64 (seta20.1)
+ - 0xdf -> port 0x60 (seta20.2)
+
+[This site](http://docs.huihoo.com/gnu_linux/own_os/booting-a20_4.htm) provides more details on why we need A20.
+
+#### Load GDT table
+This code does the job of loading a bootstrap GDT:
+
+```
+lgdt gdtdesc
+```
+
+#### Enter protected mode
+First, set the PE bit of `cr0` to 1:
+
+```
+movl %cr0, %eax
+orl $CR0_PE_ON, %eax
+movl %eax, %cr0
+```
+
+Then make a long jump to change the `pc` register, which changes 16-bit mode to 32-bit mode.
+
+```
+ljmp $PROT_MODE_CSEG, $protcseg
+.code32
+protcseg:
+```
+
+Use the adder register `AX` to setup the pointers to stacks, including data segment (`DS`), extra segment (`ES`), stack segments (`SS`),  more segments (`FS` and `GS`), set base pointer to zero, and set stack pointer to $start. 
+```
+        movw $PROT_MODE_DSEG, %ax
+        movw %ax, %ds
+        movw %ax, %es
+        movw %ax, %fs
+        movw %ax, %gs
+        movw %ax, %ss
+        movl $0x0, %ebp
+        movl $start, %esp
+```
+
+Finally, call the bootmain program.
+
+```
+call bootmain
+```
+
+## Exercise 4
+### How does bootloader read sectors?
+According to the function `readsect()`, reading from a sector requires the following steps:
+
+- Wait for the disk to be ready (see `waitdisk()` function)
+- Send the command for reading a sector
+ + `outb(0x1F2, 1)` claim that 1 sector is visited.
+ + `outb(0x1F3, secno & 0xFF)` `outb(0x1F4, (secno >> 8) & 0xFF)` `outb(0x1F5, (secno >> 16) & 0xFF)` denotes the 0-7, 8-15, 16-23 bit of LBA parameter.
+ + `outb(0x1F6, ((secno >> 24) & 0xF) | 0xE0)` is the 24-27 bit
+ + `outb(0x1F7, 0x20)` gives the 0x20 command.
+- Wait for the disk to be ready
+- `insl(0x1F0, dst, SECTSIZE / 4)` reads the sector data from port 0x1F0. 
+
+### How does bootloader load ELF format OS?
+According to the function `bootmain()`, loading a ELF format OS requires the following steps:
+
+ - Read the first page of disk, and check whether it is a valid ELF (according to ELF magic)
+ - Read each program segment into the designated virtual address `(ph->p_va)`, which has size `(ph->p_memsz)` and offset `(ph->p_offset)`.
+ - Call the entry point from the ELF entry header from address (`ELFHDR->e_entry`)
+
+Since the function does not return, so the mark `bad` cannot be reached unless ELF is invalid.
+
+## Exercise 5
+### Implement `kern/debug/kdebug.c::print_stackframe()`
+The implementation is rather simple, just follow the comments. One thing to note is when using a pointer reference, you should force it to `(uint32_t *)`, and let arguments, ebp, eip all of type `uint32_t`.
+
+The last line is where the `bootmain` function is called. Both `ebp` and `eip` are 0x00007bf8, since the call stack starts from 0x00007c00.
+
+## Exercise 6
+### About IDT
+Each Interrupt Descriptor Table (IDT) element contains 8 bytes. The 2-3 bytes are SELECTOR, the 0-1 bytes and 6-7 bytes are OFFSET. (According to the figure in 2.3.3.2).
+
+### Code for `idt_init`
+Here we need to understand `SETGATE` macro from `kern/mm/mmu.h`. There are some requirements for using `SETGATE`:
+
+ - The gate is an interrupt gate.
+ - The DPL should be kernel DPL except for one. Otherwise user can invoke interrupts so long as they wish.
+ - The `T_SWITCH_TOK` indicates the descriptor from user state to kernel state, only this is set as user DPL.
+
+### Code for `trap`
+It is indeed too simple.
