@@ -64,15 +64,15 @@ static uint16_t addr_6845;
 /* TEXT-mode CGA/VGA display output */
 static void
 cga_init(void) {
-    volatile uint16_t *cp = (uint16_t *)CGA_BUF;   //CGA_BUF: 0xB8000 (彩色显示的显存物理基址)
-    uint16_t was = *cp;                                            //保存当前显存0xB8000处的值
-    *cp = (uint16_t) 0xA55A;                                   // 给这个地址随便写个值，看看能否再读出同样的值
-    if (*cp != 0xA55A) {                                            // 如果读不出来，说明没有这块显存，即是单显配置
-        cp = (uint16_t*)MONO_BUF;                         //设置为单显的显存基址 MONO_BUF： 0xB0000
-        addr_6845 = MONO_BASE;                           //设置为单显控制的IO地址，MONO_BASE: 0x3B4
-    } else {                                                                // 如果读出来了，有这块显存，即是彩显配置
-        *cp = was;                                                      //还原原来显存位置的值
-        addr_6845 = CGA_BASE;                               // 设置为彩显控制的IO地址，CGA_BASE: 0x3D4 
+    volatile uint16_t *cp = (uint16_t *)CGA_BUF;
+    uint16_t was = *cp;
+    *cp = (uint16_t) 0xA55A;
+    if (*cp != 0xA55A) {
+        cp = (uint16_t*)MONO_BUF;
+        addr_6845 = MONO_BASE;
+    } else {
+        *cp = was;
+        addr_6845 = CGA_BASE;
     }
 
     // Extract cursor location
@@ -80,13 +80,13 @@ cga_init(void) {
     // 6845索引寄存器的index 0x0F（及十进制的15）== 光标位置(低位)
     // 6845 reg 15 : Cursor Address (Low Byte)
     uint32_t pos;
-    outb(addr_6845, 14);                                        
-    pos = inb(addr_6845 + 1) << 8;                       //读出了光标位置(高位)
+    outb(addr_6845, 14);
+    pos = inb(addr_6845 + 1) << 8;
     outb(addr_6845, 15);
-    pos |= inb(addr_6845 + 1);                             //读出了光标位置(低位)
+    pos |= inb(addr_6845 + 1);
 
-    crt_buf = (uint16_t*) cp;                                  //crt_buf是CGA显存起始地址
-    crt_pos = pos;                                                  //crt_pos是CGA当前光标位置
+    crt_buf = (uint16_t*) cp;
+    crt_pos = pos;
 }
 
 static bool serial_exists = 0;
