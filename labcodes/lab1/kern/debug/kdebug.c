@@ -308,15 +308,19 @@ print_stackframe(void) {
     uint32_t eip = read_eip();
     // (3)
     int i, j;
-    for (i = 0; ebp != 0 && i < STACKFRAME_DEPTH; i ++) {
-        cprintf("ebp:0x%08x eip:0x%08x args:", ebp, eip);
+    for (i = 0; ebp != 0 && i < STACKFRAME_DEPTH; i++) {
+        // (3.1)
+        cprintf("ebp:%#010x eip:%#010x args:", ebp, eip);
+        // (3.2)
         uint32_t *args = (uint32_t *)ebp + 2;
-        for (j = 0; j < 4; j ++) {
-            cprintf("0x%08x ", args[j]);
+        for (j = 0; j < 4; j++) {
+            cprintf("%#010x ", args[j]);
         }
         // (3.3)
         cprintf("\n");
-        print_debuginfo(eip - 1);
+        // (3.4)
+        print_debuginfo(eip-1);
+        // (3.5)
         eip = ((uint32_t *)ebp)[1];
         ebp = ((uint32_t *)ebp)[0];
 
